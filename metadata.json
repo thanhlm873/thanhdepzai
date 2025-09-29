@@ -1,0 +1,7 @@
+{
+  "name": "Lê Thành Image Editor APP",
+  "description": "An intelligent, effective, and trendy AI-powered image editing tool developed by Lê Thành. It focuses on high-quality output, minimal steps, batch processing support, and optimization for social media trends (Facebook/TikTok/Instagram).",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
