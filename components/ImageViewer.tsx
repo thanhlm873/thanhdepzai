@@ -326,18 +326,24 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ originalImage, editedImage, i
     resetTools();
   };
 
-  const handleDownload = (format: 'png' | 'jpeg', size: number) => {
-    if (!editedImage || !imageDimensions.width) return;
+  const handleDownload = useCallback(async (format: 'png' | 'jpeg', size: number) => {
+    if (!editedImage) return;
 
-    const img = new Image();
-    img.onload = () => {
+    try {
+        const img = new Image();
+        img.src = editedImage;
+        await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            console.error("Could not get canvas context");
+            alert('Lỗi: Không thể xử lý ảnh để tải xuống.');
+            return;
+        }
 
         const aspectRatio = img.naturalWidth / img.naturalHeight;
         let newWidth, newHeight;
-
         if (aspectRatio >= 1) { // Landscape or square
             newWidth = size;
             newHeight = size / aspectRatio;
@@ -348,22 +354,49 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ originalImage, editedImage, i
         
         canvas.width = Math.round(newWidth);
         canvas.height = Math.round(newHeight);
-        
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        const mimeType = `image/${format}`;
-        const dataUrl = canvas.toDataURL(mimeType, 0.95); // 0.95 quality for jpeg
 
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = `Lê_Thành_Edit_${Date.now()}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const mimeType = `image/${format}`;
+        const fileName = `Lê_Thành_Edit_${Date.now()}.${format}`;
+        
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, mimeType, 0.95));
+
+        if (!blob) {
+            console.error("Failed to create blob from canvas.");
+            alert('Lỗi: Không thể tạo file ảnh để tải xuống.');
+            return;
+        }
+
+        const file = new File([blob], fileName, { type: mimeType });
+
+        // Use Web Share API for mobile-friendly saving, which opens the native share sheet.
+        // This is the standard way to allow users to "save image" on mobile.
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                title: 'Lưu ảnh',
+            });
+        } else {
+            // Fallback to traditional download link for desktop browsers.
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
         setShowDownloadOptions(false);
-    };
-    img.src = editedImage;
-  };
+    } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') {
+             // User cancelled the share dialog, do nothing.
+             console.log('Share action was cancelled.');
+        } else {
+            console.error('Download/Share failed:', e);
+            alert('Tải ảnh xuống thất bại. Vui lòng thử lại.');
+        }
+    }
+  }, [editedImage]);
   
   const handleShare = async (platform: string) => {
     if (!editedImage) return;
