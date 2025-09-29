@@ -1,6 +1,5 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
 
 import type { EditingTask, ImagePaletteItem, HistoryItem } from './types';
 import { EDITING_CATEGORIES } from './constants';
@@ -199,127 +198,56 @@ const App: React.FC = () => {
       setError("Vui lòng nhập mô tả cho yêu cầu của bạn.");
       return;
     }
-    if (!process.env.API_KEY) {
-        setError("API key is not configured. Please set the API_KEY environment variable.");
-        return;
-    }
-
+    
     setIsLoading(true);
     setError(null);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const contentParts: ({ text: string } | { inlineData: { data: string, mimeType: string } })[] = [];
+      const sourceImageItem = imagePalette.find(img => img.id === faceSwapSourceId);
+      const targetImageItem = imagePalette.find(img => img.id === faceSwapTargetId);
+      const imageToEdit = editedImage || originalImage;
 
-      // Construct the final prompt for the AI
-      const textForAI = activeTask?.id === 'EDIT_NANO_BANANA' 
-        ? `${generatePrompt('EDIT_NANO_BANANA')}\n\nYêu cầu của người dùng: "${prompt}"`
-        : prompt;
+      const apiRequestBody = {
+        prompt,
+        activeTask,
+        imagePalette: activeTask?.id === 'IMAGE_COLLAGE' ? imagePalette.map(p => ({ dataUrl: p.dataUrl, type: p.file.type })) : undefined,
+        sourceImage: sourceImageItem ? { dataUrl: sourceImageItem.dataUrl, type: sourceImageItem.file.type } : undefined,
+        targetImage: targetImageItem ? { dataUrl: targetImageItem.dataUrl, type: targetImageItem.file.type } : undefined,
+        imageToEdit: imageToEdit,
+        imageMimeType: imageMimeType,
+      };
 
-      if (activeTask?.id === 'TREND_FACE_SWAP_MV') {
-        if (!faceSwapSourceId || !faceSwapTargetId) {
-            setError("Vui lòng chọn ảnh gốc (khuôn mặt) và ảnh đích (cảnh).");
-            setIsLoading(false);
-            return;
-        }
-        const sourceImageItem = imagePalette.find(img => img.id === faceSwapSourceId);
-        const targetImageItem = imagePalette.find(img => img.id === faceSwapTargetId);
-
-        if (!sourceImageItem || !targetImageItem) {
-            setError("Không tìm thấy ảnh đã chọn. Vui lòng thử lại.");
-            setIsLoading(false);
-            return;
-        }
-        
-        // New robust order: Visual context first (images), then instructions (prompt).
-        // The prompt has been updated to reference the images by their order.
-        contentParts.push({
-            inlineData: { // This is the "first image" (target/scene)
-                data: targetImageItem.dataUrl.split(',')[1],
-                mimeType: targetImageItem.file.type,
-            },
-        });
-        contentParts.push({
-            inlineData: { // This is the "second image" (source/face)
-                data: sourceImageItem.dataUrl.split(',')[1],
-                mimeType: sourceImageItem.file.type,
-            },
-        });
-        contentParts.push({ text: textForAI });
-
-      } else if (activeTask?.id === 'IMAGE_COLLAGE') {
-        if (imagePalette.length < 2) {
-            setError("Vui lòng tải lên ít nhất 2 ảnh để tạo khung ảnh ghép.");
-            setIsLoading(false);
-            return;
-        }
-        
-        contentParts.push({ text: textForAI });
-        imagePalette.forEach(imgItem => {
-            contentParts.push({
-                inlineData: {
-                    data: imgItem.dataUrl.split(',')[1],
-                    mimeType: imgItem.file.type,
-                },
-            });
-        });
-
-      } else {
-        // Use the most recently edited image for AI generation
-        const imageToEdit = editedImage || originalImage;
-        if (!imageToEdit) {
-            setError("Vui lòng tải lên và chọn một ảnh để chỉnh sửa.");
-            setIsLoading(false);
-            return;
-        }
-        const base64ImageData = imageToEdit.split(',')[1];
-        contentParts.push({
-            inlineData: {
-                data: base64ImageData,
-                mimeType: imageMimeType, // Assume mime type doesn't change with manual edits
-            },
-        });
-        contentParts.push({ text: textForAI });
-      }
-
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
-        contents: {
-          parts: contentParts,
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
-        },
+        body: JSON.stringify(apiRequestBody),
       });
-      
-      let foundImage = false;
-      for (const part of response.candidates[0].content.parts) {
-         if (part.inlineData) {
-            const base64ImageBytes: string = part.inlineData.data;
-            const newMimeType = part.inlineData.mimeType;
-            const imageUrl = `data:${newMimeType};base64,${base64ImageBytes}`;
-            
-            // For Face Swap, the "original" to compare against is the target image
-            if (activeTask?.id === 'TREND_FACE_SWAP_MV' && faceSwapTargetId) {
-                const targetImage = imagePalette.find(img => img.id === faceSwapTargetId);
-                if (targetImage) {
-                    setOriginalImage(targetImage.dataUrl);
-                }
-            } else if (activeTask?.id === 'IMAGE_COLLAGE' && imagePalette.length > 0) {
-                 setOriginalImage(imagePalette[0].dataUrl); 
-            }
-            
-            addStateToHistory(imageUrl, `AI: ${activeTask?.name || 'Edit'}`);
-            foundImage = true;
-            break; 
-         }
-      }
 
-      if (!foundImage) {
-        throw new Error("The AI did not return an image. It might have returned text instead. Please check your prompt.");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'An unknown error occurred from the API.');
       }
+      
+      const result = await response.json();
+      const imageUrl = result.imageUrl;
+
+      if (!imageUrl) {
+         throw new Error("The AI did not return an image. It might have returned text instead. Please check your prompt.");
+      }
+      
+      // For Face Swap, the "original" to compare against is the target image
+      if (activeTask?.id === 'TREND_FACE_SWAP_MV' && faceSwapTargetId) {
+          const targetImage = imagePalette.find(img => img.id === faceSwapTargetId);
+          if (targetImage) {
+              setOriginalImage(targetImage.dataUrl);
+          }
+      } else if (activeTask?.id === 'IMAGE_COLLAGE' && imagePalette.length > 0) {
+           setOriginalImage(imagePalette[0].dataUrl); 
+      }
+      
+      addStateToHistory(imageUrl, `AI: ${activeTask?.name || 'Edit'}`);
 
     } catch (e) {
       console.error(e);
