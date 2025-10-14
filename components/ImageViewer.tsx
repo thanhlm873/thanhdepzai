@@ -17,14 +17,10 @@ type ActiveTool = 'crop' | 'draw' | null;
 
 const DRAW_COLORS = ['#FFFFFF', '#000000', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#0EA5E9', '#8B5CF6'];
 
-const DownloadOptions: React.FC<{
+const DownloadFormatOptions: React.FC<{
   onClose: () => void;
-  onConfirm: (format: 'png' | 'jpeg', size: number) => void;
-  initialSize: number;
-  maxSize: number;
-}> = ({ onClose, onConfirm, initialSize, maxSize }) => {
-  const [format, setFormat] = useState<'png' | 'jpeg'>('jpeg');
-  const [size, setSize] = useState<number>(initialSize);
+  onConfirm: (format: 'png' | 'jpeg') => void;
+}> = ({ onClose, onConfirm }) => {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,57 +34,26 @@ const DownloadOptions: React.FC<{
   }, [onClose]);
 
   return (
-    <div ref={panelRef} className="absolute bottom-full right-0 mb-2 w-72 bg-dark-surface border border-dark-border rounded-lg shadow-2xl p-4 z-20 animate-fade-in-up">
-      <h4 className="font-semibold mb-3 text-base">Tùy chọn tải xuống</h4>
-      
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-1.5 text-gray-300">Định dạng</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button 
-              onClick={() => setFormat('jpeg')} 
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${format === 'jpeg' ? 'bg-neon-cyan text-black font-bold' : 'bg-dark-bg hover:bg-dark-border'}`}
-            >
-              JPG
-            </button>
-            <button 
-              onClick={() => setFormat('png')} 
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${format === 'png' ? 'bg-neon-cyan text-black font-bold' : 'bg-dark-bg hover:bg-dark-border'}`}
-            >
-              PNG
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="size-slider" className="block text-sm font-medium mb-1.5 text-gray-300">
-            Kích thước (cạnh dài nhất)
-          </label>
-          <input 
-            type="range" 
-            id="size-slider"
-            min={Math.min(512, maxSize)} 
-            max={maxSize} 
-            step="1"
-            value={size}
-            onChange={(e) => setSize(Number(e.target.value))}
-            className="w-full h-2 bg-dark-bg rounded-lg appearance-none cursor-pointer accent-neon-cyan"
-          />
-          <div className="text-center text-xs mt-1 font-mono">{size}px</div>
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="px-3 py-1.5 text-sm bg-dark-border rounded-md hover:bg-gray-600 transition-colors">
-          Hủy
+    <div ref={panelRef} className="absolute bottom-full right-0 mb-2 w-64 bg-dark-surface border border-dark-border rounded-lg shadow-2xl p-4 z-20 animate-fade-in-up">
+      <h4 className="font-semibold mb-3 text-base">Tải xuống chất lượng cao nhất</h4>
+      <div className="flex flex-col gap-2">
+        <button 
+          onClick={() => onConfirm('jpeg')} 
+          className="w-full px-3 py-2 text-sm rounded-md transition-colors bg-dark-bg hover:bg-dark-border text-center"
+        >
+          JPG (Tối ưu dung lượng)
         </button>
-        <button onClick={() => onConfirm(format, size)} className="px-3 py-1.5 text-sm bg-neon-cyan text-black font-bold rounded-md hover:opacity-90 transition-opacity">
-          Xác nhận
+        <button 
+          onClick={() => onConfirm('png')} 
+          className="w-full px-3 py-2 text-sm rounded-md transition-colors bg-dark-bg hover:bg-dark-border text-center"
+        >
+          PNG (Chất lượng cao nhất)
         </button>
       </div>
     </div>
   );
 };
+
 
 const ShareOptions: React.FC<{
   onClose: () => void;
@@ -326,13 +291,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ originalImage, editedImage, i
     resetTools();
   };
 
-  const handleDownload = useCallback(async (format: 'png' | 'jpeg', size: number) => {
+  const handleDownload = useCallback(async (format: 'png' | 'jpeg') => {
     if (!editedImage) return;
 
     try {
         const img = new Image();
         img.src = editedImage;
         await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+
+        // Use the image's natural dimensions, capped at MAX_DOWNLOAD_SIZE
+        const size = Math.min(MAX_DOWNLOAD_SIZE, Math.max(img.naturalWidth, img.naturalHeight));
 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -359,7 +327,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ originalImage, editedImage, i
         const mimeType = `image/${format}`;
         const fileName = `Lê_Thành_Edit_${Date.now()}.${format}`;
         
-        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, mimeType, 0.95));
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, mimeType, format === 'jpeg' ? 0.95 : undefined));
 
         if (!blob) {
             console.error("Failed to create blob from canvas.");
@@ -606,11 +574,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ originalImage, editedImage, i
                 <Download size={18}/>
               </button>
               {showDownloadOptions && (
-                <DownloadOptions 
+                <DownloadFormatOptions 
                   onClose={() => setShowDownloadOptions(false)}
                   onConfirm={handleDownload}
-                  initialSize={Math.min(MAX_DOWNLOAD_SIZE, Math.max(imageDimensions.width, imageDimensions.height))}
-                  maxSize={MAX_DOWNLOAD_SIZE}
                 />
               )}
             </div>
