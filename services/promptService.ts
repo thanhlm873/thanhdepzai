@@ -91,8 +91,10 @@ export const resizeImage = (file: File): Promise<string> => {
 
         ctx.drawImage(img, 0, 0, newWidth, newHeight);
         
-        // Use JPEG for better compression of photos, with a high quality setting.
-        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.9); 
+        // Preserve PNG for lossless quality, otherwise use high-quality JPEG.
+        const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        // For JPEG, use quality 1.0 (highest). This parameter is ignored for PNG.
+        const resizedDataUrl = canvas.toDataURL(mimeType, 1.0);
         resolve(resizedDataUrl);
       };
       img.onerror = (err) => reject(err);
