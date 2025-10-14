@@ -44,3 +44,59 @@ const PROMPT_TEMPLATES: Record<string, string> = {
 export const generatePrompt = (taskId: string | null): string => {
   return PROMPT_TEMPLATES[taskId || 'DEFAULT'] || PROMPT_TEMPLATES['DEFAULT'];
 };
+// The maximum dimension for image processing. Set to 4096 to support 4K resolution.
+const MAX_DIMENSION = 4096;
+
+/**
+ * Resizes an image file if its dimensions exceed MAX_DIMENSION.
+ * @param file The image file to resize.
+ * @returns A promise that resolves with a data URL of the resized image.
+ */
+export const resizeImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      if (!event.target?.result) {
+        return reject(new Error("Failed to read file."));
+      }
+
+      const img = new Image();
+      img.src = event.target.result as string;
+      img.onload = () => {
+        const { width, height } = img;
+
+        // If image is small enough, no need to resize
+        if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
+          resolve(img.src);
+          return;
+        }
+
+        let newWidth, newHeight;
+        if (width > height) {
+          newWidth = MAX_DIMENSION;
+          newHeight = (height * MAX_DIMENSION) / width;
+        } else {
+          newHeight = MAX_DIMENSION;
+          newWidth = (width * MAX_DIMENSION) / height;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return reject(new Error('Could not get canvas context'));
+        }
+
+        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+        
+        // Use JPEG for better compression of photos, with a high quality setting.
+        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.9); 
+        resolve(resizedDataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
